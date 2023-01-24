@@ -56,3 +56,8 @@ app.*.map.json
 
 # clj-kondo
 .clj-kondo/*
+# ClojureDart
+.cpcache/
+.clojuredart/
+lib/cljd-out/
+test/cljd-out/
