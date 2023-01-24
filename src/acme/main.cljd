@@ -1,0 +1,31 @@
+(ns acme.main
+  (:require ["package:flutter/material.dart" :as m]
+            ["package:flutter/services.dart" :as ds]
+            ["package:flutter/widgets.dart" :as fw]
+            ["dart:typed_data" :as td]
+            ["dart:convert" :as convert]
+            [cljd.flutter.alpha2 :refer [widget]]
+            [acme.reader :as r2]))
+
+(defn ByteData->utf8
+  [^td/ByteData byte-data]
+  (let [buffer (.-buffer byte-data)]
+    (.asUint8List buffer (.-offsetInBytes byte-data) (.-lengthInBytes byte-data))))
+
+(defn get-edn-resource [path]
+  (let [file (await (ds/rootBundle.load path))]
+    (r2/read-string (->> file
+                         ByteData->utf8
+                         (convert/utf8.decode)))))
+
+(defn main []
+  (fw/WidgetsFlutterBinding.ensureInitialized)
+  (let [dictionary (await (get-edn-resource "assets/dictionary.edn"))
+        _ (prn "Done reading")] 
+    (m/runApp
+     (m/MaterialApp
+      .title "idiom | An experimental dictionary for Tibetan translators"
+      .theme (m/ThemeData .brightness m/Brightness.dark)
+      .home
+      (widget
+       (m/Text (str (count dictionary))))))))

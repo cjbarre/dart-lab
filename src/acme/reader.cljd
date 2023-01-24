@@ -1,0 +1,133 @@
+(ns acme.reader
+  (:require ["dart:convert" :as convert]))
+
+(def ClojureConverter
+  (reify
+    :extends convert/Converter
+    (convert
+      [_ string]
+      (str "converted: " string))))
+
+(defn read-hash-map [string index]
+  (let [result #dart[]]
+    (loop [index index]
+      (let [[val new-index] (read string index "}")]
+        #_(prn (str "read-hash-map: " val))
+        (if (or (= val :end-of-string) (= val :delimiter-reached))
+          (if (zero? (bit-and 1 (.-length result)))
+            [(-map-lit result) new-index]
+            (throw (FormatException. "Map literal must contain an even number of forms")))
+          (do (.add result val)
+              (recur new-index)))))))
+
+(defn read-vector [string index]
+  (let [result #dart[]]
+    (loop [index index]
+      (let [[val new-index] (read string index "]")]
+        #_(prn (str "read-vector: " val))
+        (if (or (= val :end-of-string) (= val :delimiter-reached))
+          (if (< 32 (.-length result))
+            [(vec result) new-index]
+            [(-vec-owning result) new-index])
+          (do (.add result val)
+              (recur new-index)))))))
+
+(def ^RegExp STRING-CONTENT-REGEXP (RegExp. "(?:[^\"\\\\]|\\\\.)*"))
+(def ^RegExp STRING-ESC-REGEXP (RegExp. "\\\\(?:u([0-9a-fA-F]{0,4})|([0-7]{1,3})|(.))"))
+
+(defn read-string-content
+  [^String string ^int index]
+  (let [end-index (.-end (.matchAsPrefix STRING-CONTENT-REGEXP string index))
+        string-content (.substring string index end-index)]
+    [(.replaceAllMapped
+      string-content
+      STRING-ESC-REGEXP
+      (fn [^Match m]
+        (if-some [^String m1 (.group m 1)]
+          (if (< (.-length m1) 4)
+            (throw (FormatException. (str "Unsupported escape for character: \\u" m1 " \\u MUST be followed by 4 hexadecimal digits")))
+            (String/fromCharCode (int/parse m1 .radix 16)))
+          (if-some [^String m2 (.group m 2)]
+            (String/fromCharCode (int/parse m2 .radix 8))
+            (let [m3 (.group m 3)]
+              (case m3
+                "\"" (str m3)
+                "\\" (str m3)
+                "b" "\b"
+                "n" "\n"
+                "r" "\r"
+                "t" "\t"
+                "f" "\f"
+                (throw (FormatException. (str "Unsupported escape character: \\" m3)))))))))
+     (inc end-index)]))
+
+(def macros
+  {"{" (fn [string index] (read-hash-map string index))
+   "}" (fn [_] (throw (FormatException. "EOF while reading, starting at line")))
+   "[" (fn [string index] (read-vector string index))
+   "]" (fn [_] (throw (FormatException. "EOF while reading, starting at line")))
+   "\"" (fn [string index] (read-string-content string index))})
+
+(def ^RegExp SPACE-REGEXP #"[\s,]*")
+
+(def ^RegExp INT-REGEXP (RegExp. "([-+]?)(?:(0)|([1-9][0-9]*)|0[xX]([0-9A-Fa-f]+)|0([0-7]+)|([1-9][0-9]?)[rR]([0-9A-Za-z]+)|0[0-9]+)(N)?$"))
+(def ^RegExp DOUBLE-REGEXP (RegExp. "([-+]?[0-9]+([.][0-9]*)?([eE][-+]?[0-9]+)?)(M)?$"))
+(def ^RegExp SYMBOL-REGEXP (RegExp. "(?:([:]{2})|([:]))?(?:([^0-9/:].*)/)?(/|[^0-9/][^/]*)$"))
+
+(defn interpret-token [^String token]
+  (case token
+    (if-some [m (.matchAsPrefix INT-REGEXP token)]
+      (let [parse (if ^some (.group m 8)
+                    (if (== "-" (.group m 1))
+                      (fn ^BigInt [^String s ^int radix] (- (BigInt/parse s .radix radix)))
+                      (fn ^BigInt [^String s ^int radix] (BigInt/parse s .radix radix)))
+                    (if (== "-" (.group m 1))
+                      (fn ^int [^String s ^int radix] (- (int/parse s .radix radix)))
+                      (fn ^int [^String s ^int radix] (int/parse s .radix radix))))]
+        (cond
+          (not (nil? (.group m 2))) 0
+          (not (nil? (.group m 3))) (parse (.group m 3) 10)
+          (not (nil? (.group m 4))) (parse (.group m 4) 16)
+          (not (nil? (.group m 5))) (parse (.group m 5) 8)
+          (not (nil? (.group m 7))) (parse (.group m 7) (int/parse ^String (.group m 6)))
+          :else (throw (FormatException. (str "Invalid number: " token ".")))))
+      :error)))
+
+(defn terminating? [ch]
+  (cond
+    (< -1 (.indexOf "'#%" ch)) false
+    (macros ch) true
+    (< 0 (or (some-> (.matchAsPrefix SPACE-REGEXP ch) .-end) 0)) true
+    :else false))
+
+(defn read-token [^String string ^int index]
+  (loop [end-index index]
+    (let [ch (. ^String string "[]" end-index)]
+      (if (terminating? ch)
+        [(.substring string index end-index) end-index]
+        (recur (inc end-index))))))
+
+(defn read
+  [^String string ^int index ^String delim] 
+  (if (= -1 index)
+    [:end-of-string -1]
+    (let [index index
+          ch (. string "[]" index)]
+      #_(prn (str index " " ch))
+      (cond
+        (= 1 (.-end (.matchAsPrefix SPACE-REGEXP ch))) (recur string (inc index) delim)
+        (> index (.-length string)) [:end-of-string -1]
+        (= ch delim) [:delimiter-reached (inc index)]
+        :else
+        (if-let [macro-reader (macros ch)]
+          (let [[val new-index] (macro-reader string (inc index))]
+            [val (or new-index -1)])
+          (let [[token new-index] (read-token string index)]
+            [(interpret-token token) new-index]))))))
+
+(defn read-string
+  [^String string]
+  (first (read string 0 "-1")))
+
+
+
