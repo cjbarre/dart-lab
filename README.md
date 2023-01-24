@@ -1,3 +1,3 @@
-# Idiom
+# Dart Lab
 
-An experimental dictionary for Tibetan translators.
+A place to work on ClojureDart stuff.
