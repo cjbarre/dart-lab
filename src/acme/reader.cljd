@@ -12,7 +12,6 @@
   (let [result #dart[]]
     (loop [index index]
       (let [[val new-index] (read string index "}")]
-        #_(prn (str "read-hash-map: " val))
         (if (or (= val :end-of-string) (= val :delimiter-reached))
           (if (zero? (bit-and 1 (.-length result)))
             [(-map-lit result) new-index]
@@ -24,7 +23,6 @@
   (let [result #dart[]]
     (loop [index index]
       (let [[val new-index] (read string index "]")]
-        #_(prn (str "read-vector: " val))
         (if (or (= val :end-of-string) (= val :delimiter-reached))
           (if (< 32 (.-length result))
             [(vec result) new-index]
@@ -113,7 +111,6 @@
     [:end-of-string -1]
     (let [index index
           ch (. string "[]" index)]
-      #_(prn (str index " " ch))
       (cond
         (= 1 (.-end (.matchAsPrefix SPACE-REGEXP ch))) (recur string (inc index) delim)
         (> index (.-length string)) [:end-of-string -1]
