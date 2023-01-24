@@ -1,13 +1,6 @@
 (ns acme.reader
   (:require ["dart:convert" :as convert]))
 
-(def ClojureConverter
-  (reify
-    :extends convert/Converter
-    (convert
-      [_ string]
-      (str "converted: " string))))
-
 (defn read-hash-map [string index]
   (let [result #dart[]]
     (loop [index index]
