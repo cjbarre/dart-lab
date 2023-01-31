@@ -93,10 +93,12 @@
 
 (defn read-token [^String string ^int index]
   (loop [end-index index]
-    (let [ch (. ^String string "[]" end-index)]
-      (if (terminating? ch)
-        [(.substring string index end-index) end-index]
-        (recur (inc end-index))))))
+    (if (== end-index (.-length string))
+      [(.substring string index end-index) end-index]
+      (let [ch (. ^String string "[]" end-index)]
+        (if (terminating? ch)
+          [(.substring string index end-index) end-index]
+          (recur (inc end-index)))))))
 
 (defn read
   [^String string ^int index ^String delim] 
@@ -118,6 +120,4 @@
 (defn read-string
   [^String string]
   (first (read string 0 "-1")))
-
-
 
